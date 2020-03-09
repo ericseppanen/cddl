@@ -1,7 +1,7 @@
 #[macro_use]
 extern crate clap;
 
-use cddl::{compile_cddl_from_str, validate_json_from_str};
+use cddl::{compile_cddl_from_str, validate_cbor_from_slice, validate_json_from_str};
 use clap::{App, AppSettings, SubCommand};
 use crossterm::{Color, Colored};
 use serde_json;
@@ -22,7 +22,11 @@ fn main() -> Result<(), Box<dyn Error>> {
                     .subcommand(SubCommand::with_name("validate")
                                 .about("validate JSON against CDDL definition")
                                 .arg_from_usage("-c --cddl=<FILE> 'CDDL input file'")
-                                .arg_from_usage("-j --json=<FILE> 'JSON input file"));
+                                .arg_from_usage("-j --json=<FILE> 'JSON input file"))
+                    .subcommand(SubCommand::with_name("validate-cbor")
+                                .about("validate CBOR against CDDL definition")
+                                .arg_from_usage("-c --cddl=<FILE> 'CDDL input file'")
+                                .arg_from_usage("-b --cbor=<FILE> 'CBOR input file"));
 
   let matches = app.get_matches();
 
@@ -55,6 +59,23 @@ fn main() -> Result<(), Box<dyn Error>> {
     if let Some(cddl) = matches.value_of("cddl") {
       if let Some(json) = matches.value_of("json") {
         match validate_json_from_str(&fs::read_to_string(cddl)?, &fs::read_to_string(json)?) {
+          Ok(()) => {
+            println!("{}Validation successful", Colored::Fg(Color::Green));
+          }
+          Err(e) => {
+            eprintln!("{}Validation failed. {}", Colored::Fg(Color::Red), e);
+          }
+        }
+
+        return Ok(());
+      }
+    }
+  }
+
+  if let Some(matches) = matches.subcommand_matches("validate-cbor") {
+    if let Some(cddl) = matches.value_of("cddl") {
+      if let Some(cbor) = matches.value_of("cbor") {
+        match validate_cbor_from_slice(&fs::read_to_string(cddl)?, &fs::read(cbor)?) {
           Ok(()) => {
             println!("{}Validation successful", Colored::Fg(Color::Green));
           }
