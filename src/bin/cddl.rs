@@ -1,7 +1,7 @@
 #[macro_use]
 extern crate clap;
 
-use cddl::{compile_cddl_from_str, validate_cbor_from_slice, validate_json_from_str};
+use cddl::{compile_cddl_from_str, parser, validate_cbor_from_slice, validate_json_from_str};
 use clap::{App, AppSettings, SubCommand};
 use crossterm::{Color, Colored};
 use serde_json;
@@ -13,6 +13,9 @@ fn main() -> Result<(), Box<dyn Error>> {
                     .author(crate_authors!())
                     .about("Tool for verifying conformance of CDDL definitions against RFC 8610 and for validating JSON documents")
                     .setting(AppSettings::SubcommandRequiredElseHelp)
+                    .subcommand(SubCommand::with_name("dump-cddl")
+                                .about("dump CDDL AST")
+                                .arg_from_usage("-c --cddl=<FILE> 'CDDL input file'"))
                     .subcommand(SubCommand::with_name("compile-cddl")
                                 .about("compiles CDDL against RFC 8610")
                                 .arg_from_usage("-c --cddl=<FILE> 'CDDL input file'"))
@@ -29,6 +32,15 @@ fn main() -> Result<(), Box<dyn Error>> {
                                 .arg_from_usage("-b --cbor=<FILE> 'CBOR input file"));
 
   let matches = app.get_matches();
+
+  if let Some(matches) = matches.subcommand_matches("dump-cddl") {
+    let cddl_filename = matches.value_of("cddl").unwrap();
+    let cddl_str = fs::read_to_string(cddl_filename)?;
+    let ast = parser::cddl_from_str(&cddl_str)
+      .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
+    println!("{:#?}", ast);
+    return Ok(());
+  }
 
   if let Some(matches) = matches.subcommand_matches("compile-cddl") {
     if let Some(c) = matches.value_of("cddl") {
