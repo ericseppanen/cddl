@@ -6,6 +6,18 @@ use crate::{
 use serde_cbor::{self, Value};
 use std::{f64, fmt};
 
+/// Error type when looking up types in CDDL
+#[derive(Debug)]
+pub struct TypeNotFoundError;
+
+impl std::error::Error for TypeNotFoundError {}
+
+impl fmt::Display for TypeNotFoundError {
+  fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+    write!(f, "failed to find type") // FIXME: list the failed type
+  }
+}
+
 /// Error type when validating CDDL
 #[derive(Debug)]
 pub struct CBORError {
@@ -63,15 +75,25 @@ impl Into<Error> for CBORError {
   }
 }
 
-impl Validator<Value> for CDDL {
-  fn validate(&self, value: &Value) -> Result {
-    for r in self.rules.iter() {
-      if let Rule::Type { rule, .. } = r {
-        return self.validate_type_rule(rule, None, None, None, value);
+impl CDDL {
+  fn validate_first(&self, value: &Value) -> Result {
+    for rule in self.rules.iter() {
+      if let Rule::Type { rule: typerule, .. } = rule {
+        let tethered = TetheredType {
+          cddl: self,
+          typerule,
+        };
+        return tethered.validate(value);
       }
     }
 
     Ok(())
+  }
+}
+
+impl Validator<Value> for TetheredType<'_> {
+  fn validate(&self, value: &Value) -> Result {
+    self.validate_type_rule(self.typerule, None, None, None, value)
   }
 
   fn validate_rule_for_ident(
@@ -83,7 +105,7 @@ impl Validator<Value> for CDDL {
     occur: Option<&Occur>,
     value: &Value,
   ) -> Result {
-    for rule in self.rules.iter() {
+    for rule in self.cddl.rules.iter() {
       match rule {
         Rule::Type { rule, .. } if rule.name.ident == ident.ident => {
           return self.validate_type_rule(&rule, expected_memberkey, actual_memberkey, occur, value)
@@ -464,7 +486,7 @@ impl Validator<Value> for CDDL {
             };
 
           if let GroupEntry::TypeGroupname { ge: tge, .. } = &ge.0 {
-            if self.rules.iter().any(|r| match r {
+            if self.cddl.rules.iter().any(|r| match r {
               Rule::Type { rule, .. } if rule.name.ident == tge.name.ident => true,
               _ => false,
             }) && values.iter().all(validate_all_entries)
@@ -916,15 +938,21 @@ fn is_type_prelude(t: &str) -> bool {
 
 /// Validates CBOR input against given CDDL input
 pub fn validate_cbor_from_slice(cddl_input: &str, cbor_input: &[u8]) -> Result {
-  validate_cbor(
-    &parser::cddl_from_str(cddl_input)
-      .map_err(|e| Error::Compilation(CompilationError::CDDL(e)))?,
-    &serde_cbor::from_slice(cbor_input).map_err(|e| Error::Target(e.into()))?,
-  )
+  let cddl =
+    parser::cddl_from_str(cddl_input).map_err(|e| Error::Compilation(CompilationError::CDDL(e)))?;
+  let cbor = serde_cbor::from_slice(cbor_input).map_err(|e| Error::Target(e.into()))?;
+  cddl.validate_first(&cbor)
 }
 
-fn validate_cbor<V: Validator<Value>>(cddl: &V, cbor: &Value) -> Result {
-  cddl.validate(cbor)
+/// Validates CBOR input against a named CDDL type.
+pub fn validate_cbor_named(cddl_input: &str, typename: &str, cbor_input: &[u8]) -> Result {
+  let cddl =
+    parser::cddl_from_str(cddl_input).map_err(|e| Error::Compilation(CompilationError::CDDL(e)))?;
+  let cbor = serde_cbor::from_slice(cbor_input).map_err(|e| Error::Target(e.into()))?;
+  let tethered_type = cddl
+    .lookup_type(typename)
+    .ok_or(Error::Target(Box::new(TypeNotFoundError {})))?;
+  tethered_type.validate(&cbor)
 }
 
 #[cfg(test)]

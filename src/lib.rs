@@ -297,7 +297,7 @@ pub use self::{
 #[cfg(feature = "std")]
 #[cfg(not(target_arch = "wasm32"))]
 pub use self::validation::{
-  cbor::{self as cbor_validator, validate_cbor_from_slice},
+  cbor::{self as cbor_validator, validate_cbor_from_slice, validate_cbor_named},
   json::{self as json_validator, validate_json_from_str},
   Error as ValidationError, Validator,
 };

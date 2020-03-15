@@ -38,6 +38,47 @@ impl fmt::Display for CDDL {
   }
 }
 
+/// A CDDL Type, tethered to the parent CDDL so that validation
+/// can recurse into other rules.
+#[derive(Debug, Clone)]
+pub struct TetheredType<'a> {
+  /// The parent CDDL struct containing all Rules
+  pub cddl: &'a CDDL,
+  /// An individual Rule from the parent CDDL
+  pub typerule: &'a TypeRule,
+}
+
+impl<'a> fmt::Display for TetheredType<'a> {
+  fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+    self.typerule.fmt(f)
+  }
+}
+
+impl CDDL {
+  /// Retrieve CDDL rules in the form of TetheredType structs
+  /// that can be used to validate individual data structures.
+  pub fn get_tethered_types<'a>(&'a self) -> impl Iterator<Item = TetheredType<'a>> {
+    self.rules.iter().filter_map(move |rule| match rule {
+      Rule::Type { rule: typerule, .. } => Some(TetheredType {
+        cddl: &self,
+        typerule,
+      }),
+      _ => None,
+    })
+  }
+
+  /// Search for a TypeRule by name.  If found, return it in a TetheredType
+  /// that can be used to validate inputs.
+  pub fn lookup_type(&self, name: &str) -> Option<TetheredType> {
+    for tt in self.get_tethered_types() {
+      if tt.typerule.name.ident == name {
+        return Some(tt);
+      }
+    }
+    None
+  }
+}
+
 /// Identifier for a type name, group name or bareword, with an optional socket
 ///
 /// ```abnf
