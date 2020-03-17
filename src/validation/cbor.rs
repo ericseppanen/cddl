@@ -455,7 +455,7 @@ impl Validator<Value> for TetheredType<'_> {
   ) -> Result {
     let mut errors: Vec<Error> = Vec::new();
 
-    for ge in gc.group_entries.iter() {
+    for (ge_index, ge) in gc.group_entries.iter().enumerate() {
       match value {
         Value::Array(values) => {
           if let GroupEntry::TypeGroupname { ge: tge, .. } = &ge.0 {
@@ -495,34 +495,21 @@ impl Validator<Value> for TetheredType<'_> {
             }
           }
 
-          // If an array element is not validated by any of the group entries,
-          // return scoped errors
-          let mut errors: Vec<Error> = Vec::new();
-
-          if values.iter().any(
-            |v| match self.validate_group_entry(&ge.0, false, None, occur, v) {
-              Ok(()) => true,
-              Err(e) => {
-                errors.push(e);
-
-                false
-              }
-            },
-          ) {
-            continue;
+          // Match array element 1-on-1
+          // first verify that the array lengths match.
+          if values.len() != gc.group_entries.len() {
+              return Err(
+                CBORError {
+                  expected_memberkey: None,
+                  expected_value: gc.to_string(),
+                  actual_memberkey: None,
+                  actual_value: value.clone(),
+                }
+                .into(),
+              )
           }
-
-          if !errors.is_empty() {
-            return Err(
-              CBORError {
-                expected_memberkey: None,
-                expected_value: gc.to_string(),
-                actual_memberkey: None,
-                actual_value: value.clone(),
-              }
-              .into(),
-            );
-          }
+          let value_at_index = values.get(ge_index).unwrap();
+          self.validate_group_entry(&ge.0, false, None, occur, value_at_index)?;
         }
         Value::Map(_) => {
           // Validate the object key/value pairs against each group entry,
